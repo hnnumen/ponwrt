@@ -1,0 +1,72 @@
+name: Build HM2004-DU (ponwrt)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [build-2004]
+
+# Builds only this fork's content; never touches upstream.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+            /opt/hostedtoolcache /usr/lib/jvm /usr/local/lib/android \
+            /usr/share/swift /usr/lib/mono /opt/microsoft /usr/local/.ghcup \
+            /usr/local/go 2>/dev/null || true
+          sudo apt-get clean -y
+          df -h /
+
+      - name: Checkout this fork (already carries the 2004 profile)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk \
+            gcc-multilib gettext git libncurses5-dev libssl-dev \
+            python3-setuptools unzip zlib1g-dev file wget rsync subversion \
+            ccache
+
+      - name: Apply HM2004-DU device profile
+        run: |
+          set -e
+          DTS=target/linux/airoha/dts
+          cp -v hm2004-du/dts/an7581-h3c-hm2004-du.dts        "$DTS/"
+          cp -v hm2004-du/dts/an7581-h3c-hm2004-du.dtsi       "$DTS/"
+          cp -v hm2004-du/dts/an7581-h3c-hm2004-du-ubi-parts.dtsi "$DTS/"
+          MK=target/linux/airoha/image/an7581.mk
+          grep -q "h3c_hm2004-du" "$MK" || cat hm2004-du/an7581.mk.addition >> "$MK"
+
+      - name: Configure (single device: HM2004-DU)
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          # OpenWrt sanitizes the device name: h3c_hm2004-du -> h3c_hm2004_du
+          cat > .config <<'EOF'
+          CONFIG_TARGET_airoha=y
+          CONFIG_TARGET_airoha_an7581=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_h3c_hm2004_du=y
+          CONFIG_CCACHE=y
+          EOF
+          make defconfig
+          # Sanity: confirm only the 2004 device is selected
+          grep -E 'CONFIG_TARGET_airoha_an7581_DEVICE' .config
+
+      - name: Build HM2004-DU
+        run: make -j"$(nproc)" V=s
+
+      - name: Upload sysupgrade.itb
+        uses: actions/upload-artifact@v4
+        with:
+          name: hm2004-du-sysupgrade
+          path: bin/targets/airoha/an7581/*hm2004*sysupgrade.itb
+          if-no-files-found: error
