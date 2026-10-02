@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+
+/dts-v1/;
+
+#include "an7581.dtsi"
+#include "an7581-h3c-hm2004-du.dtsi"
+#include "an7581-h3c-hm2004-du-ubi-parts.dtsi"
+
+/ {
+	model = "H3C HM2004-DU";
+	compatible = "h3c,hm2004-du", "airoha,an7581",
+		     "airoha,en7581";
+};
