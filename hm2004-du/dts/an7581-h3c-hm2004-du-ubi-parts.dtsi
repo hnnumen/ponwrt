@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * H3C HM2004-DU SPI-NAND (Winbond W25N02KV, 256 MiB) partition + UBI layout.
+ *
+ * Mirrors the an7581 UBI boot chain used by the Nokia XG-040G-MD/TF in this
+ * tree: a 128 KiB BL2 region followed by a full-capacity UBI volume set.
+ * The bl2 region is filled by the BL2/preloader produced by uboot-an758x
+ * (an7581-h3c-hm2004-du-preloader.bin); the fit/fip UBI volumes hold the
+ * OpenWrt kernel FIT and the BL31+U-Boot FIP respectively.
+ */
+
+/ {
+	chosen {
+		rootdisk = <&ubi_fit>;
+	};
+};
+
+&snfi {
+	status = "okay";
+};
+
+&spi_nand {
+	/*
+	 * Bootloader stores pages without host ECC, so Linux uses
+	 * NAND_ECC_NONE for the same page layout.
+	 */
+	nand-ecc-mode = "none";
+	nand-ecc-step-size = <2048>;
+	nand-ecc-strength = <0>;
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0_all {
+			label = "all_flash";
+			reg = <0x0 0x10000000>;
+			read-only;
+		};
+
+		partition@0 {
+			label = "bl2";
+			reg = <0x0 0x20000>;
+			read-only;
+		};
+
+		partition@20000 {
+			label = "ubi";
+			reg = <0x20000 0xffe0000>;
+			compatible = "linux,ubi";
+
+			volumes {
+				ubi_fit: ubi-volume-fit {
+					volname = "fit";
+				};
+
+				ubi-volume-fip {
+					volname = "fip";
+				};
+
+				ubi_env: ubi-volume-ubootenv {
+					volname = "ubootenv";
+				};
+
+				ubi_env2: ubi-volume-ubootenv2 {
+					volname = "ubootenv2";
+				};
+			};
+		};
+	};
+};
+
+&ubi_env {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool-layout";
+	};
+};
+
+&ubi_env2 {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool-layout";
+	};
+};
