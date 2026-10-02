@@ -50,11 +50,13 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          # OpenWrt sanitizes the device name: h3c_hm2004-du -> h3c_hm2004_du
+          # OpenWrt keeps the device name AS-IS in the Kconfig symbol
+          # (hyphens preserved, NOT sanitized to underscores): the option is
+          # CONFIG_TARGET_airoha_an7581_DEVICE_h3c_hm2004-du
           cat > .config <<'EOF'
           CONFIG_TARGET_airoha=y
           CONFIG_TARGET_airoha_an7581=y
-          CONFIG_TARGET_airoha_an7581_DEVICE_h3c_hm2004_du=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_h3c_hm2004-du=y
           CONFIG_CCACHE=y
           EOF
           make defconfig
@@ -64,9 +66,18 @@ jobs:
       - name: Build HM2004-DU
         run: make -j"$(nproc)" V=s
 
-      - name: Upload sysupgrade.itb
+      - name: List build output (diagnostic)
+        if: always()
+        run: |
+          echo "===== bin/targets/airoha/an7581 ====="
+          ls -la bin/targets/airoha/an7581/ 2>/dev/null || echo "NO TARGET DIR"
+          echo "===== 2004-related files ====="
+          find bin -iname '*hm2004*' 2>/dev/null || true
+
+      - name: Upload HM2004-DU images
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: hm2004-du-sysupgrade
-          path: bin/targets/airoha/an7581/*hm2004*sysupgrade.itb
+          name: hm2004-du-images
+          path: bin/targets/airoha/an7581/
           if-no-files-found: error
