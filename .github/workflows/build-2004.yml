@@ -73,6 +73,9 @@ jobs:
           ls -la bin/targets/airoha/an7581/ 2>/dev/null || echo "NO TARGET DIR"
           echo "===== 2004-related files ====="
           find bin -iname '*hm2004*' 2>/dev/null || true
+          echo "===== DTC / build errors (if any) ====="
+          grep -n -i -E 'undefined|expecting|error:|No rule to make|recipe for target|failed to build' build.log 2>/dev/null | tail -150 > bin/targets/airoha/an7581/build_error.txt || true
+          echo "captured build_error.txt ($(wc -l < bin/targets/airoha/an7581/build_error.txt 2>/dev/null || echo 0) lines)"
 
       - name: Upload HM2004-DU images
         uses: actions/upload-artifact@v4
