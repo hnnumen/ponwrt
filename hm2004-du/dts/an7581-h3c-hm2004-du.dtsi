@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * H3C HM2004-DU board support (AN7581 / EN7581).
+ *
+ * Hardware recovered from:
+ *   - the stock U-Boot device tree (uboot-an758x:
+ *     an7581-h3c-hm2004-du.dts / -u-boot.dtsi)
+ *   - the vendor rootfs/FPGA DTB (fttr-port: dts/h3c-fmcs.dtsi)
+ *
+ * Wiring notes:
+ *   - reset key  : GPIO 0  (active low)
+ *   - power LED  : GPIO 17 (green, active low)
+ *   - wlan LED   : GPIO 15 (green, active low)
+ *   - SPI-NAND   : Winbond W25N02KV (256 MiB), bl2 + ubi layout
+ *   - pinctrl    : gpio-ranges <0 13 50> (AN7581 50-pin block at pin 13)
+ *
+ * The FTTR M-OLT FPGA (Pango Logos PGL50H) is described by the "fmcs"
+ * node below. Its register transport (R1 in fttr-port docs) still needs a
+ * generic SPI master on the 0x1fa10000 controller; until that driver exists
+ * the node simply fails to probe and is harmless to include.
+ */
+
+/ {
+	aliases {
+		label-mac-device = &gdm1;
+
+		led-boot = &led_power_green;
+		led-failsafe = &led_power_green;
+		led-running = &led_power_green;
+		led-upgrade = &led_power_green;
+
+		serial0 = &uart1;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 earlycon";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x20000000>;
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		key-reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&en7581_pinctrl 0 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_power_green: led-0 {
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_POWER;
+			gpios = <&en7581_pinctrl 17 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+
+		led-1 {
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_WLAN;
+			gpios = <&en7581_pinctrl 15 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+	};
+
+	/*
+	 * FMCS / FTTR M-OLT FPGA (Pango Logos PGL50H-6-FBG484).
+	 *
+	 * The five fpga-load-* GPIO lines are hard-coded bit positions inside the
+	 * SoC GPIO block, taken verbatim from the vendor DTB / fpga_load.ko:
+	 *   nCONFIG   GPIO 5   (pulsed low then high)
+	 *   RST       GPIO 22
+	 *   CLK       GPIO 29
+	 *   DATA(DO)  GPIO 30
+	 *   STATUS    GPIO 27
+	 *   CONF-DONE GPIO 28
+	 * The interrupt arrives through the pinctrl GPIO controller on GPIO 23.
+	 *
+	 * The node is enabled so it binds once the fttr-port fmcs driver (with the
+	 * R1 SPI transport) is built into the kernel; without that driver it is a
+	 * no-op probe deferral and does not affect boot.
+	 */
+	fmcs: fmcs {
+		compatible = "h3c,fmcs";
+
+		interrupt-parent = <&en7581_pinctrl>;
+		interrupts = <23 IRQ_TYPE_LEVEL_HIGH>;
+
+		nconfig-gpios   = <&en7581_pinctrl 5  GPIO_ACTIVE_HIGH>;
+		rst-gpios       = <&en7581_pinctrl 22 GPIO_ACTIVE_HIGH>;
+		clk-gpios       = <&en7581_pinctrl 29 GPIO_ACTIVE_HIGH>;
+		data-gpios      = <&en7581_pinctrl 30 GPIO_ACTIVE_HIGH>;
+		status-gpios    = <&en7581_pinctrl 27 GPIO_ACTIVE_HIGH>;
+		conf-done-gpios = <&en7581_pinctrl 28 GPIO_ACTIVE_HIGH>;
+
+		status = "okay";
+	};
+};
+
+&en7581_pinctrl {
+	gpio-ranges = <&en7581_pinctrl 0 13 50>;
+};
+
+&eth {
+	status = "okay";
+};
+
+&eth_pcs {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
