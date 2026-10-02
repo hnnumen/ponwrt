@@ -1,0 +1,31 @@
+# ----------------------------------------------------------------------------
+# H3C HM2004-DU (FTTR main gateway, AN7581 + SNFI NAND + UBI)
+#
+# Append this block to target/linux/airoha/image/an7581.mk.
+# The build reuses the shared an7581 UBI/FIT image rules already present in
+# this file; only the device metadata and DTS name differ from the Nokia MD.
+# ----------------------------------------------------------------------------
+define Device/h3c_hm2004-du
+  $(call Device/FitImageLzma)
+  DEVICE_VENDOR := H3C
+  DEVICE_MODEL := HM2004-DU
+  DEVICE_VARIANT := (UBI)
+  DEVICE_DTS := an7581-h3c-hm2004-du
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  UBINIZE_OPTS := -E 5
+  UBOOTENV_IN_UBI := 1
+  KERNEL_IN_UBI := 1
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(DEVICE_DTS).dtb with-initrd | pad-to 128k
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  IMAGES := sysupgrade.itb
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(DEVICE_DTS).dtb external-static-with-rootfs | \
+	append-metadata
+  DEVICE_PACKAGES := kmod-gpio-button-hotplug kmod-leds-gpio \
+	kmod-usb3 nand-utils ubi-utils fitblk
+  SOC := an7581
+endef
+TARGET_DEVICES += h3c_hm2004-du
