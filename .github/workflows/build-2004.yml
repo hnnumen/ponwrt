@@ -46,7 +46,7 @@ jobs:
           MK=target/linux/airoha/image/an7581.mk
           grep -q "h3c_hm2004-du" "$MK" || cat hm2004-du/an7581.mk.addition >> "$MK"
 
-      - name: Configure (single device: HM2004-DU)
+      - name: Configure (single device HM2004-DU)
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
