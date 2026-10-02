@@ -2,6 +2,12 @@
 /*
  * H3C HM2004-DU board support (AN7581 / EN7581).
  *
+ * Includes: gpio.h / input.h are REQUIRED here because this file references
+ * GPIO_ACTIVE_{LOW,HIGH} and KEY_RESTART. The base an7581.dtsi does NOT pull
+ * them in (only leds/common.h), so without these the DTC fails with
+ * "undefined identifier" and no DTB/image is produced. (Nokia common dtsi
+ * includes the same three headers.)
+
  * Hardware recovered from:
  *   - the stock U-Boot device tree (uboot-an758x:
  *     an7581-h3c-hm2004-du.dts / -u-boot.dtsi)
@@ -19,6 +25,10 @@
  * generic SPI master on the 0x1fa10000 controller; until that driver exists
  * the node simply fails to probe and is harmless to include.
  */
+
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 
 / {
 	aliases {
