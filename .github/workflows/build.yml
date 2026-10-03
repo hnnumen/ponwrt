@@ -16,7 +16,7 @@ on:
           - an7583
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-${{ inputs.target }}-${{ github.ref }}
@@ -93,3 +93,39 @@ jobs:
           path: release/*.tar.zst
           if-no-files-found: error
           retention-days: 30
+
+      - name: Prepare release assets
+        if: success()
+        run: |
+          set -e
+          mkdir -p release
+          sha256sum release/*.tar.zst > release/sha256sums
+          cd release
+          [ -f sha256sums ] || sha256sum * > sha256sums
+          echo "----- 待发布资产 -----"
+          ls -la
+
+      - name: Publish to GitHub Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REL_TAG: ${{ inputs.target }}-latest
+          REL_TITLE: PonWrt ${{ inputs.target }} (rolling)
+        run: |
+          set -e
+          cd release
+          echo "目标 Release: $REL_TAG"
+          if gh release view "$REL_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release 已存在 -> 覆盖同名资产"
+            gh release upload "$REL_TAG" --repo "$GITHUB_REPOSITORY" --clobber ./*
+          else
+            echo "Release 不存在 -> 创建"
+            gh release create "$REL_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$REL_TITLE" \
+              --prerelease \
+              --notes "自动发布：ponwrt ${{ inputs.target }} 固件（滚动更新）。\n每次编译成功后自动更新本 Release 的资产，下载链接固定不变。" \
+              ./*
+          fi
+          echo "完成: https://github.com/$GITHUB_REPOSITORY/releases/tag/$REL_TAG"
