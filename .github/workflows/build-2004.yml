@@ -7,7 +7,7 @@ on:
 
 # Builds only this fork's content; never touches upstream.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -84,3 +84,40 @@ jobs:
           name: hm2004-du-images
           path: bin/targets/airoha/an7581/
           if-no-files-found: error
+
+      - name: Prepare release assets
+        if: success()
+        run: |
+          set -e
+          mkdir -p release
+          find bin/targets/airoha/an7581 -maxdepth 1 -type f \
+            \( -name '*.itb' -o -name 'sha256sums' \) -exec cp -v {{}} release/ \;
+          cd release
+          [ -f sha256sums ] || sha256sum * > sha256sums
+          echo "----- 待发布资产 -----"
+          ls -la
+
+      - name: Publish to GitHub Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REL_TAG: hm2004-du-latest
+          REL_TITLE: HM2004-DU PonWrt (rolling)
+        run: |
+          set -e
+          cd release
+          echo "目标 Release: $REL_TAG"
+          if gh release view "$REL_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release 已存在 -> 覆盖同名资产"
+            gh release upload "$REL_TAG" --repo "$GITHUB_REPOSITORY" --clobber ./*
+          else
+            echo "Release 不存在 -> 创建"
+            gh release create "$REL_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$REL_TITLE" \
+              --prerelease \
+              --notes "自动发布：H3C HM2004-DU (h3c,hm2004-du / Airoha AN7581) 的 ponwrt 固件。\n每次编译成功后自动更新本 Release 的资产，下载链接固定不变。\n- *-squashfs-sysupgrade.itb : 正式固件，刷进 flash\n- *-initramfs-recovery.itb  : 内存版系统，不写 flash，用于首次安装/救砖" \
+              ./*
+          fi
+          echo "完成: https://github.com/$GITHUB_REPOSITORY/releases/tag/$REL_TAG"
