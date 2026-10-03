@@ -113,6 +113,14 @@ jobs:
           REL_TITLE: PonWrt ${{ inputs.target }} (rolling)
         run: |
           set -e
+          NOTES_FILE="$(mktemp)"
+          cat > "$NOTES_FILE" <<RELNOTES
+          自动发布：ponwrt ${{ inputs.target }} 固件（滚动更新）。
+          
+          每次编译成功后自动更新本 Release 的资产，**下载链接固定不变**。
+          
+          Run: $GITHUB_RUN_ID / Commit: $GITHUB_SHA
+          RELNOTES
           cd release
           echo "目标 Release: $REL_TAG"
           if gh release view "$REL_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -125,7 +133,6 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "$REL_TITLE" \
               --prerelease \
-              --notes "自动发布：ponwrt ${{ inputs.target }} 固件（滚动更新）。\n每次编译成功后自动更新本 Release 的资产，下载链接固定不变。" \
-              ./*
+              --notes-file "$NOTES_FILE" \
           fi
           echo "完成: https://github.com/$GITHUB_REPOSITORY/releases/tag/$REL_TAG"
