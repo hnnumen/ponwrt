@@ -7,6 +7,34 @@
  * The bl2 region is filled by the BL2/preloader produced by uboot-an758x
  * (an7581-h3c-hm2004-du-preloader.bin); the fit/fip UBI volumes hold the
  * OpenWrt kernel FIT and the BL31+U-Boot FIP respectively.
+ *
+ * REVISION 2026-10-04 -- aligned with pbs05/uboot-an758x recovery_layout.
+ *
+ * The stock2ubi installer plus the U-Boot recovery web page create the
+ * data volumes declared by the U-Boot board file
+ * (arch/arm/dts/an7581-h3c-hm2004-du-u-boot.dtsi -> &recovery_layout).
+ * Originally that overlay declared a single 1 MiB volume named "factory",
+ * which does NOT match what a PON ONT actually needs, and which had no
+ * counterpart in the Linux UBI volume table below. The two sides therefore
+ * disagreed and the calibration/identity data had nowhere to live.
+ *
+ * The 040G-MD reference layout (an758x-nokia_xg-040g-ubi-parts.dtsi) is the
+ * correct model for any Airoha PON ONT and is reproduced here verbatim for
+ * the two data volumes:
+ *
+ *   bosa : 0x40000, holds the 512-byte BOB optical module calibration block
+ *          exported through NVMEM at offset 0x2 (the UBI volume header is
+ *          kept intact, NVMEM just skips past it).
+ *   ri   : 0x40000, holds the PON identity. Offset 0x1a stores VEND plus
+ *          eight hexadecimal VSSN characters; offset 0x3e stores the
+ *          factory MAC address, which U-Boot reads back through
+ *          ethaddr_factory (= ubi read 0x90000000 ri ; env readmem -b ethaddr
+ *          0x9000003e 0x6) so the ONT keeps a stable MAC across reboots
+ *          instead of falling back to CONFIG_NET_RANDOM_ETHADDR.
+ *
+ * Keeping the nvmem-layout nodes is what lets airoha-ponctl / airoha-pond
+ * discover the calibration data and lets U-Boot restore the MAC; dropping
+ * them yields an ONT that boots but can never register on the OLT.
  */
 
 / {
@@ -51,6 +79,44 @@
 			compatible = "linux,ubi";
 
 			volumes {
+				pon_calibration_storage: ubi-volume-bosa {
+					volname = "bosa";
+
+					nvmem-layout {
+						compatible = "fixed-layout";
+
+						#address-cells = <1>;
+						#size-cells = <1>;
+
+						/* The UBI volume retains its header while NVMEM exposes 512-byte BOB. */
+						pon_calibration: calibration@2 {
+							reg = <0x2 0x200>;
+						};
+					};
+				};
+
+				ubi-volume-factory {
+					volname = "ri";
+
+					nvmem-layout {
+						compatible = "fixed-layout";
+
+						#address-cells = <1>;
+						#size-cells = <1>;
+
+						/* RI offset 0x1a stores VEND plus eight hexadecimal VSSN characters. */
+						pon_serial: pon-serial@1a {
+							reg = <0x1a 0xc>;
+						};
+
+						macaddr_factory_3e: macaddr@3e {
+							compatible = "mac-base";
+							reg = <0x3e 0x6>;
+							#nvmem-cell-cells = <1>;
+						};
+					};
+				};
+
 				ubi_fit: ubi-volume-fit {
 					volname = "fit";
 				};
