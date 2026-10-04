@@ -4,6 +4,27 @@
 # Append this block to target/linux/airoha/image/an7581.mk.
 # The build reuses the shared an7581 UBI/FIT image rules already present in
 # this file; only the device metadata and DTS name differ from the Nokia MD.
+#
+# REVISION 2026-10-04 -- PON package set completed.
+#
+# The previous revision only listed the storage/LED/USB packages, which is why
+# the resulting image booted but could never register on the OLT: the Airoha
+# PON MAC driver, the PON protocol stack and the two userspace control tools
+# were all missing. The list below now matches
+# Device/nokia_xg-040g-md-common in the same file, minus the two entries that
+# are specific to the Nokia board's external circuitry (usb-ledtrig and the
+# en8811h external PHY is kept -- see below -- while the Nokia-only
+# kmod-usb-ledtrig-usbport is dropped because HM2004-DU drives its LEDs
+# directly over GPIO 15/17).
+#
+#   kmod-airoha-en7572      : EN7572/AN7581 PON MAC + XGMAC datapath driver.
+#                             Without it there is no PON MAC register access
+#                             at all; this is the single most critical entry.
+#   kmod-airoha-xpon        : PON protocol stack (GEM/T-CONT/EAP upstream).
+#   airoha-ponctl           : userspace PON control (registration, LOS/ANSI).
+#   airoha-pond             : PON data plane daemon.
+#   kmod-phy-airoha-en8811h : EN8811H RGMII PHY, used by the Ethernet ports.
+#   kmod-regulator-userspace-consumer : external rail switching for the PHY.
 # ----------------------------------------------------------------------------
 define Device/h3c_hm2004-du
   $(call Device/FitImageLzma)
@@ -25,7 +46,10 @@ define Device/h3c_hm2004-du
 	fit gzip $$(KDIR)/image-$$(DEVICE_DTS).dtb external-static-with-rootfs | \
 	append-metadata
   DEVICE_PACKAGES := kmod-gpio-button-hotplug kmod-leds-gpio \
-	kmod-usb3 nand-utils ubi-utils fitblk
+	kmod-phy-airoha-en8811h kmod-regulator-userspace-consumer \
+	kmod-usb3 \
+	kmod-airoha-en7572 kmod-airoha-xpon airoha-ponctl airoha-pond \
+	nand-utils ubi-utils fitblk
   SOC := an7581
 endef
 TARGET_DEVICES += h3c_hm2004-du
