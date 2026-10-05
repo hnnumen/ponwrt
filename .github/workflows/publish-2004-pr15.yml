@@ -1,0 +1,45 @@
+name: Publish HM2004-DU (PR #15) release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifact from run 37303423482
+        uses: actions/download-artifact@v4
+        with:
+          name: hm2004-du-pr15-images
+          run-id: 37303423482
+          github-token: ${{ github.token }}
+          path: images
+
+      - name: Collect release assets
+        run: |
+          set -e
+          ls -la images
+          mkdir -p release
+          find images -maxdepth 1 -type f \( -name '*.itb' -o -name 'sha256sums' \) -exec cp -v {} release/ \;
+          cd release
+          [ -f sha256sums ] || sha256sum * > sha256sums
+          echo "----- assets -----"
+          ls -la
+
+      - name: Publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REL_TAG: hm2004-du-pr15-latest
+        run: |
+          set -e
+          cd release
+          if gh release view "$REL_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$REL_TAG" --repo "$GITHUB_REPOSITORY" --clobber ./*
+          else
+            gh release create "$REL_TAG" --repo "$GITHUB_REPOSITORY" --title "HM2004-DU PonWrt (PR #15 rolling)" --prerelease --notes "H3C HM2004-DU ponwrt firmware, built from PR #15 (qwe3017/ponwrt @ 9def82). Includes MT7916 Wi-Fi, PON stack (en7572/xpon/ponctl/pond) and board.d runtime config." ./*
+          fi
+          echo "done: https://github.com/$GITHUB_REPOSITORY/releases/tag/$REL_TAG"
