@@ -134,6 +134,6 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "$REL_TITLE" \
               --prerelease \
-              --notes-file "$NOTES_FILE" \
+              --notes-file "$NOTES_FILE"
           fi
           echo "完成: https://github.com/$GITHUB_REPOSITORY/releases/tag/$REL_TAG"
