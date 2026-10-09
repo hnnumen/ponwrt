@@ -81,12 +81,18 @@ jobs:
           cp ../ci/configs/hm2004.config .config
           make defconfig
           echo "===== selected devices ====="
-          grep -E '^CONFIG_TARGET.*DEVICE.*=y$' .config
+          grep -E '^CONFIG_TARGET_airoha_an7581_DEVICE_.*=y$' .config
           echo "===== assert only one ====="
-          n=$(grep -cE '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_.*=y$' .config || true)
+          n=$(grep -cE '^CONFIG_TARGET_airoha_an7581_DEVICE_.*=y$' .config || true)
           echo "selected an7581 devices: $n"
           test "$n" = "1"
           grep -q '^CONFIG_TARGET_airoha_an7581_DEVICE_h3c_hm2004-du=y$' .config
+          # CONFIG_TARGET_MULTI_PROFILE is a deprecated alias in the same kconfig
+          # choice as PER_DEVICE_ROOTFS; if both are y the profile choice gets
+          # overridden and every device silently drops out. Guard against it.
+          ! grep -qE '^CONFIG_TARGET_MULTI_PROFILE=y$' .config
+          # no leftover legacy double-prefixed device rows
+          ! grep -qE '^CONFIG_TARGET_DEVICE_' .config
 
       - name: Download sources
         working-directory: openwrt
