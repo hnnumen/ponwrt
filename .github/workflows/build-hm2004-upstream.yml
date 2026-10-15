@@ -67,6 +67,17 @@ jobs:
           grep -c 'h3c,hm2004-du' target/linux/airoha/an7581/base-files/etc/board.d/02_network
           grep -c 'h3c,hm2004-du' target/linux/airoha/base-files/etc/board.d/03_pon_data
 
+      # Third-party feed: gdy666/luci-app-lucky ships both the lucky core
+      # package (prebuilt Go binary per ARCH) and the LuCI app + zh-cn.
+      - name: Add third-party feeds (lucky)
+        working-directory: openwrt
+        run: |
+          set -e
+          grep -q '^src-git lucky ' feeds.conf.default || \
+            echo "src-git lucky https://github.com/gdy666/luci-app-lucky.git" >> feeds.conf.default
+          echo "----- feeds.conf.default -----"
+          cat feeds.conf.default
+
       - name: Update & install feeds
         working-directory: openwrt
         run: |
@@ -93,6 +104,11 @@ jobs:
           ! grep -qE '^CONFIG_TARGET_MULTI_PROFILE=y$' .config
           # no leftover legacy double-prefixed device rows
           ! grep -qE '^CONFIG_TARGET_DEVICE_' .config
+          # lucky (DDNS/port-forward) core + LuCI app from third-party feed
+          grep -q '^CONFIG_PACKAGE_lucky=y$' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-lucky=y$' .config
+          echo "===== lucky packages ====="
+          grep -E '^CONFIG_PACKAGE_(lucky|luci-app-lucky)=' .config
 
       - name: Download sources
         working-directory: openwrt
