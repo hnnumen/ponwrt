@@ -144,6 +144,19 @@ jobs:
       # InstallDev libffi explicitly first -- otherwise python3 hits
       # 'ffi.h: No such file or directory' whenever the scheduler reverses
       # the two.
+      # A bare 'make package/.../compile' does NOT pull in the prerequisites
+      # that 'make world' normally builds first.  Without them
+      # staging_dir/host/bin is empty and even sed/openssl are missing,
+      # so the libffi prebuild dies with "sed: No such file or directory"
+      # (exit 127).  Install the host tools and the cross toolchain first.
+      # This is not extra work: 'make world' would build them anyway.
+      - name: Prepare host tools and toolchain
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          make tools/install toolchain/install -j"$(nproc)" V=s
+          ls -l staging_dir/host/bin/sed staging_dir/host/bin/openssl
+
       - name: Prebuild libffi (stage ffi.h before python3)
         working-directory: openwrt
         run: |
