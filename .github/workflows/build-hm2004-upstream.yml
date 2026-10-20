@@ -152,7 +152,7 @@ jobs:
             echo "libffi not vendored -- relying on natural build order"
             exit 0
           fi
-          make package/libffi/install -j"$(nproc)" V=s 2>&1 | tee libffi.log
+          make package/libs/libffi/compile package/libs/libffi/install -j"$(nproc)" V=s 2>&1 | tee libffi.log
           ls -l staging_dir/target-*/usr/include/ffi.h \
                 staging_dir/target-*/usr/include/fficonfig.h
 
