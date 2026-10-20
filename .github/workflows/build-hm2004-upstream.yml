@@ -65,6 +65,8 @@ jobs:
           ls -l target/linux/airoha/dts/an7581-h3c-hm2004-du.dts
           grep -c 'h3c_hm2004-du' target/linux/airoha/image/an7581.mk
           grep -c 'h3c,hm2004-du' target/linux/airoha/an7581/base-files/etc/board.d/02_network
+          grep -c 'h3c,hm2004-du' target/linux/airoha/an7581/base-files/etc/board.d/01_leds
+          # 03_pon_data lives on the shared airoha level, not per-subtarget.
           grep -c 'h3c,hm2004-du' target/linux/airoha/base-files/etc/board.d/03_pon_data
 
       # Third-party feed: gdy666/luci-app-lucky ships both the lucky core
