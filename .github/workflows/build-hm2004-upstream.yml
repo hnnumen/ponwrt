@@ -137,6 +137,25 @@ jobs:
         working-directory: openwrt
         run: make download -j"$(nproc)" V=s
 
+      # python3 configures with --with-system-ffi but only declares libffi in
+      # HOST_BUILD_DEPENDS, and its compile line searches
+      # staging_dir/target-*/usr/include only.  make offers no ordering
+      # guarantee for a package that is not in DEPENDS, so build and
+      # InstallDev libffi explicitly first -- otherwise python3 hits
+      # 'ffi.h: No such file or directory' whenever the scheduler reverses
+      # the two.
+      - name: Prebuild libffi (stage ffi.h before python3)
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          if [ ! -f package/libs/libffi/Makefile ]; then
+            echo "libffi not vendored -- relying on natural build order"
+            exit 0
+          fi
+          make package/libffi/install -j"$(nproc)" V=s 2>&1 | tee libffi.log
+          ls -l staging_dir/target-*/usr/include/ffi.h \
+                staging_dir/target-*/usr/include/fficonfig.h
+
       - name: Build HM2004-DU
         working-directory: openwrt
         # pipefail is essential. `make ... | tee build.log` without it reports
