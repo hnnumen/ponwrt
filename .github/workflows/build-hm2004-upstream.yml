@@ -87,6 +87,27 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # libffi left the packages feed on 2026-10-19 (immortalwrt/packages
+      # 70ac3a844 "libffi: move to core repo") and pbs05/ponwrt has not
+      # picked it up.  python3 builds with --with-system-ffi and declares
+      # libffi/host in HOST_BUILD_DEPENDS, so without the package it dies on
+      # "ffi.h: No such file or directory" and 'make world' aborts entirely --
+      # no .itb is produced at all.  Vendor it from this fork when absent.
+      - name: Restore libffi (left the packages feed 2026-10-19)
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          if [ -f package/libs/libffi/Makefile ]; then
+            echo "libffi already present in the openwrt tree -- nothing to do"
+          else
+            mkdir -p package/libs/libffi
+            cp ../ci/package/libs/libffi/Makefile package/libs/libffi/Makefile
+            echo "vendored libffi into $(pwd)/package/libs/libffi"
+          fi
+          ls -l package/libs/libffi/Makefile
+          echo "===== feed index check ====="
+          ./scripts/feeds list -p libffi || true
+
       - name: Configure (single device h3c_hm2004-du)
         working-directory: openwrt
         run: |
@@ -118,7 +139,16 @@ jobs:
 
       - name: Build HM2004-DU
         working-directory: openwrt
-        run: make -j"$(nproc)" V=s 2>&1 | tee build.log
+        # pipefail is essential. `make ... | tee build.log` without it reports
+        # tee's exit status, so a failed image build still shows a green job --
+        # that is exactly how run #4 "succeeded" while producing zero .itb.
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)" V=s 2>&1 | tee build.log
+          echo "===== images produced ====="
+          find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' \
+            -exec ls -l {} \; || echo "!!! no .itb produced"
 
       - name: List build output (diagnostic)
         if: always()
@@ -143,11 +173,19 @@ jobs:
         if: success()
         working-directory: openwrt
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p release
+          # Hard gate: never publish a release that is missing the images.
+          n_itb=$(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' | wc -l)
+          echo "itb images found: $n_itb"
+          if [ "$n_itb" -lt 2 ]; then
+            echo "::error::expected >= 2 .itb images under bin/targets/airoha/an7581, found $n_itb"
+            ls -la bin/targets/airoha/an7581/ || true
+            exit 1
+          fi
           find bin/targets/airoha/an7581 -maxdepth 1 -type f \
             \( -name '*.itb' -o -name 'sha256sums' \) -exec cp -v {} release/ \;
-          cp build.log release/build.log 2>/dev/null || true
+          cp build.log release/build.log
           cd release
           [ -f sha256sums ] || sha256sum * > sha256sums
           ls -la
