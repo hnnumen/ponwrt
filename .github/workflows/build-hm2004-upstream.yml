@@ -165,7 +165,20 @@ jobs:
             echo "libffi not vendored -- relying on natural build order"
             exit 0
           fi
-          make package/libs/libffi/compile package/libs/libffi/install -j"$(nproc)" V=s 2>&1 | tee libffi.log
+          # OpenWrt only exposes package/<dir>/<pkg>/compile.  There is no
+          # package/libs/libffi/install target -- asking for it aborts with
+          # "No rule to make target".  compile already drives the package's
+          # own install + InstallDev stages (the log stamps .libffi_installed),
+          # so the target list must stop at compile.
+          make package/libs/libffi/compile -j"$(nproc)" V=s 2>&1 | tee libffi.log
+          # InstallDev normally stages the headers.  If a future libffi drops
+          # that step, copy them out of the build dir instead of failing python3.
+          if ! ls staging_dir/target-*/usr/include/ffi.h >/dev/null 2>&1; then
+            echo "ffi.h was not staged by InstallDev, copying from build_dir"
+            cp -fv build_dir/target-*/libffi-*/aarch64-openwrt-linux*/ffi.h \
+                   build_dir/target-*/libffi-*/aarch64-openwrt-linux*/fficonfig.h \
+                   staging_dir/target-*/usr/include/
+          fi
           ls -l staging_dir/target-*/usr/include/ffi.h \
                 staging_dir/target-*/usr/include/fficonfig.h
 
