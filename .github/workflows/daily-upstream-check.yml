@@ -177,6 +177,7 @@ jobs:
 
           dispatched = None
           note = None
+          fatal = None
           if overall == "MAJOR":
               short = (head or "")[:8]
               note = already_built(short)
@@ -194,6 +195,7 @@ jobs:
                   except Exception as e:
                       lines.append(f"- **触发编译失败**：{e}")
                       print(f"::error::dispatch failed: {e}")
+                      fatal = "dispatch"
           else:
               lines.append("- 无重大更新，未触发编译")
 
@@ -224,5 +226,12 @@ jobs:
                       iss = api("POST", f"/repos/{REPO}/issues", {"title": title, "body": body})
                       print(f"::notice::已创建 issue #{iss['number']}")
                   except Exception as e:
-                      print(f"::warning::创建 issue 失败: {e}")
+                      # Issue 发不出去就等于没通知，必须让整个 run 变红，
+                      # 这样 GitHub 的 workflow 失败通知才能兜住。
+                      print(f"::error::创建通知 issue 失败，通知未能送达: {e}")
+                      fatal = fatal or "notify"
+
+          if fatal:
+              print(f"::error::巡检关键动作失败（{fatal}），详见上方日志")
+              sys.exit(1)
           PY
