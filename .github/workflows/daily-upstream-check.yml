@@ -1,0 +1,228 @@
+name: Daily upstream check (HM2004-DU)
+
+# 每天 01:00 UTC（= 09:00 UTC+8）检查上游是否有影响 HM2004-DU 固件的更新。
+# 重大更新 -> 自动触发 build-hm2004-upstream.yml 并创建 Issue 通知；
+# 无关更新 -> 只在本次 run 的 Summary 里留一行，不产生通知。
+
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "只检查不触发编译、不建 Issue（演练用）"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+concurrency:
+  group: hm2004-daily-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Inspect upstream and dispatch build when needed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          WINDOW_HOURS: "26"
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          TOKEN = os.environ["GH_TOKEN"]
+          REPO = os.environ["REPO"]
+          WINDOW_HOURS = int(os.environ.get("WINDOW_HOURS", "26"))
+          DRY = os.environ.get("DRY_RUN", "").strip() in ("1", "true", "True", "yes")
+          UPSTREAM = "pbs05/ponwrt"
+          UBOOT = "pbs05/uboot-an758x"
+          BUILD_WF = "build-hm2004-upstream.yml"
+
+          MAJOR_PREFIX = ("target/linux/airoha/", "include/", "config/", "target/imagebuilder")
+          KEY_PKG = ("lucky", "luci", "netifd", "base-files", "dropbear", "dnsmasq")
+          IGNORE_PREFIX = (".github/", ".gitignore", "LICENSE")
+
+          def api(method, path, body=None, auth=True):
+              url = path if path.startswith("http") else "https://api.github.com" + path
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method)
+              req.add_header("Accept", "application/vnd.github+json")
+              req.add_header("User-Agent", "hm2004-daily-check")
+              if auth:
+                  req.add_header("Authorization", "Bearer " + TOKEN)
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  raw = resp.read()
+                  return json.loads(raw) if raw.strip() else None
+
+          def recent_commits(repo, since):
+              q = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+              try:
+                  # 公共仓库匿名读取即可，避免 GITHUB_TOKEN 的跨仓库限制
+                  return api("GET", f"/repos/{repo}/commits?since={q}&per_page=50", auth=False) or []
+              except Exception as e:
+                  print(f"::error::读取 {repo} 提交失败: {e}")
+                  return []
+
+          def classify(repo, commits):
+              paths, detail = set(), []
+              for c in commits[:20]:
+                  sha = c["sha"][:8]
+                  msg = c["commit"]["message"].splitlines()[0][:90]
+                  date = c["commit"]["author"]["date"][:16]
+                  try:
+                      full = api("GET", f"/repos/{repo}/commits/{c['sha']}", auth=False)
+                      names = [f["filename"] for f in (full.get("files") or [])]
+                  except Exception:
+                      names = []
+                  paths.update(names)
+                  detail.append({"sha": sha, "date": date, "msg": msg, "files": len(names)})
+              real = [p for p in paths if not p.startswith(IGNORE_PREFIX) and not p.endswith(".md")]
+              major = [p for p in real if p.startswith(MAJOR_PREFIX)]
+              keypkg = [p for p in real if any(k in p for k in KEY_PKG)]
+              if major:
+                  return "MAJOR", "设备定义变更", sorted(real), detail
+              if keypkg:
+                  return "MAJOR", "关键包变更", sorted(real), detail
+              if real:
+                  return "MINOR", "非设备路径变更", sorted(real), detail
+              return "NONE", "无实质变更", sorted(real), detail
+
+          def build_runs(n=15):
+              try:
+                  d = api("GET", f"/repos/{REPO}/actions/workflows/{BUILD_WF}/runs?per_page={n}")
+                  return d.get("workflow_runs", []) or []
+              except Exception as e:
+                  print(f"::warning::查询编译记录失败: {e}")
+                  return []
+
+          def already_built(short_sha):
+              """同一上游 sha 已编过、或正在编，则不重复触发。"""
+              for r in build_runs():
+                  title = (r.get("display_title") or "") + " " + (r.get("name") or "")
+                  if short_sha and short_sha in title:
+                      return f"run {r['id']}（{r['status']}）已针对 {short_sha} 编译"
+                  if r.get("status") in ("queued", "in_progress"):
+                      return f"run {r['id']} 正在进行中（{r['status']}）"
+              return None
+
+          def dispatch(head_sha):
+              if DRY:
+                  print(f"[dry-run] 本应 dispatch {BUILD_WF} upstream_sha={head_sha}")
+                  return
+              api("POST", f"/repos/{REPO}/actions/workflows/{BUILD_WF}/dispatches",
+                  {"ref": "master",
+                   "inputs": {"publish_release": True, "upstream_sha": head_sha}})
+
+          def existing_issue(short_sha):
+              try:
+                  q = f"repo:{REPO}+is:issue+state:open+%22{short_sha}%22"
+                  d = api("GET", "/search/issues?q=" + q)
+                  items = d.get("items") or []
+                  return items[0] if items else None
+              except Exception:
+                  return None
+
+          now = datetime.now(timezone.utc)
+          since = now - timedelta(hours=WINDOW_HOURS)
+
+          # ---- 上游 ponwrt ----
+          commits = recent_commits(UPSTREAM, since)
+          head = commits[0]["sha"] if commits else None
+          if commits:
+              level, reason, paths, detail = classify(UPSTREAM, commits)
+          else:
+              level, reason, paths, detail = "NONE", "窗口内无新提交", [], []
+
+          # ---- U-Boot 上游 ----
+          ucommits = recent_commits(UBOOT, since)
+          if ucommits:
+              ulevel, ureason, upaths, udetail = classify(UBOOT, ucommits)
+          else:
+              ulevel, ureason, upaths, udetail = "NONE", "窗口内无新提交", [], []
+
+          overall = "MAJOR" if "MAJOR" in (level, ulevel) else (
+              "MINOR" if "MINOR" in (level, ulevel) else "NONE")
+
+          lines = [f"## HM2004-DU 上游巡检 — {now.strftime('%Y-%m-%d %H:%M UTC')}", ""]
+          lines.append(f"- 检查窗口：最近 {WINDOW_HOURS} 小时")
+          lines.append(f"- 结论：**{overall}**")
+          lines.append("")
+          lines.append(f"### {UPSTREAM}")
+          lines.append(f"- 新增 {len(commits)} 个提交，判定 **{level}**（{reason}）")
+          for x in detail:
+              lines.append(f"  - `{x['sha']}` {x['date']} {x['msg']}（{x['files']} 个文件）")
+          if paths:
+              lines.append(f"- 触及：{', '.join('`' + p + '`' for p in paths[:12])}")
+          lines.append("")
+          lines.append(f"### {UBOOT}")
+          lines.append(f"- 新增 {len(ucommits)} 个提交，判定 **{ulevel}**（{ureason}）")
+          for x in udetail:
+              lines.append(f"  - `{x['sha']}` {x['date']} {x['msg']}（{x['files']} 个文件）")
+          lines.append("")
+          lines.append("### 动作")
+
+          dispatched = None
+          note = None
+          if overall == "MAJOR":
+              short = (head or "")[:8]
+              note = already_built(short)
+              if note:
+                  lines.append(f"- 未触发编译：{note}")
+              else:
+                  try:
+                      dispatch(head)
+                      if DRY:
+                          lines.append(f"- [dry-run] 满足触发条件（upstream_sha `{head[:8]}`），未实际触发")
+                          print("[dry-run] dispatch skipped")
+                      else:
+                          dispatched = head[:8]
+                          lines.append(f"- 已触发编译：`{BUILD_WF}`（upstream_sha `{dispatched}`）")
+                  except Exception as e:
+                      lines.append(f"- **触发编译失败**：{e}")
+                      print(f"::error::dispatch failed: {e}")
+          else:
+              lines.append("- 无重大更新，未触发编译")
+
+          summary = "\n".join(lines)
+          print(summary)
+
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary:
+              with open(step_summary, "a", encoding="utf-8") as f:
+                  f.write(summary + "\n")
+
+          # ---- 重大更新才发通知（Issue） ----
+          if overall == "MAJOR" and DRY:
+              print("::notice::[dry-run] 满足通知条件，未创建 issue")
+          elif overall == "MAJOR":
+              short = (head or "unknown")[:8]
+              exist = existing_issue(short)
+              if exist:
+                  print(f"::notice::已有未关闭的通知 issue #{exist['number']}，跳过创建")
+              else:
+                  title = f"HM2004-DU 重大更新：{short}（{now.strftime('%Y-%m-%d')}）"
+                  body = summary
+                  if dispatched:
+                      body += f"\n\n编译已自动触发，约 85 分钟后产物发布到 Release `hm2004-du-upstream-latest`。"
+                  elif note:
+                      body += f"\n\n本次未触发编译：{note}"
+                  try:
+                      iss = api("POST", f"/repos/{REPO}/issues", {"title": title, "body": body})
+                      print(f"::notice::已创建 issue #{iss['number']}")
+                  except Exception as e:
+                      print(f"::warning::创建 issue 失败: {e}")
+          PY
