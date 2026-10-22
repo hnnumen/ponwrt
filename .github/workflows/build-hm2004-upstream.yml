@@ -1,5 +1,7 @@
 name: Build HM2004-DU (upstream ponwrt master)
 
+run-name: HM2004-DU ${{ inputs.upstream_sha || github.sha }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,6 +10,11 @@ on:
         required: false
         default: true
         type: boolean
+      upstream_sha:
+        description: "上游提交 sha（巡检自动填写，用于去重与溯源）"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
